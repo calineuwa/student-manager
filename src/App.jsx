@@ -1,464 +1,346 @@
-import { useMemo, useState } from "react";
+
+import { useEffect, useState } from "react";
 import "./App.css";
 
-const STORAGE_KEY = "caline_students";
-
-function readStudents() {
-  const savedStudents = window.localStorage.getItem(STORAGE_KEY);
-  const students = savedStudents ? JSON.parse(savedStudents) : [];
-
-  if (
-    !Array.isArray(students) ||
-    students.some(
-      (student) =>
-        !student ||
-        (typeof student.id !== "string" &&
-          typeof student.id !== "number") ||
-        typeof student.name !== "string" ||
-        typeof student.age !== "number" ||
-        typeof student.course !== "string"
-    )
-  ) {
-    throw new Error("Saved student data is invalid.");
-  }
-
-  return students;
-}
-
-function getInitialData() {
-  try {
-    return { students: readStudents(), error: "" };
-  } catch (loadError) {
-    console.error("Loading student records failed:", loadError);
-    return {
-      students: [],
-      error: "Unable to load saved student records.",
-    };
-  }
-}
+const API_URL = "http://localhost/student_api/students.php";
 
 function App() {
-  const [initialData] = useState(getInitialData);
-  const [page, setPage] = useState("home");
-  const [students, setStudents] = useState(initialData.students);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [formData, setFormData] = useState({
-    name: "",
-    age: "",
-    course: "",
-  });
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState(initialData.error);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [students, setStudents] = useState([]);
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
+  const [course, setCourse] = useState("");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
-  const filteredStudents = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    return students.filter((student) =>
-      student.name.toLowerCase().includes(query)
-    );
-  }, [searchTerm, students]);
-
-  const navigateTo = (nextPage) => {
-    setPage(nextPage);
-    setError("");
-    setSuccessMessage("");
-  };
-
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setFormData((currentData) => ({ ...currentData, [name]: value }));
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    setError("");
-    setSuccessMessage("");
-
-    const name = formData.name.trim();
-    const age = Number(formData.age);
-    const course = formData.course.trim();
-
-    if (name.length < 2) {
-      setError("Enter a student name with at least 2 characters.");
-      return;
-    }
-
-    if (!Number.isInteger(age) || age < 1 || age > 120) {
-      setError("Enter a valid age between 1 and 120.");
-      return;
-    }
-
-    if (!course) {
-      setError("Enter a course name.");
-      return;
-    }
-
-    setIsSaving(true);
-
+  const fetchStudents = async () => {
     try {
-      const currentStudents = readStudents();
-      const newStudent = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name,
-        age,
-        course,
-      };
-      const updatedStudents = [...currentStudents, newStudent];
+      setError("");
 
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(updatedStudents)
-      );
-      setStudents(updatedStudents);
-      setFormData({ name: "", age: "", course: "" });
-      setSuccessMessage("Student registered successfully.");
-      setPage("students");
-    } catch (saveError) {
-      console.error("Student registration failed:", saveError);
-      setError("Unable to save the student. Please try again.");
+      const response = await fetch(API_URL);
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Unable to load students.");
+      }
+
+      setStudents(data.students);
+    } catch (err) {
+      setError(err.message);
     } finally {
-      setIsSaving(false);
+      setLoading(false);
     }
   };
 
-  const handleDelete = (studentId) => {
-    if (!window.confirm("Are you sure you want to delete this student?")) {
-      return;
-    }
+  useEffect(() => {
+    fetchStudents();
+  }, []);
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
-    setSuccessMessage("");
-    const updatedStudents = students.filter(
-      (student) => student.id !== studentId
-    );
+    setMessage("");
+    setSubmitting(true);
 
     try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(updatedStudents)
-      );
-      setStudents(updatedStudents);
-      setSuccessMessage("Student deleted successfully.");
-    } catch (deleteError) {
-      console.error("Student deletion failed:", deleteError);
-      setError("Unable to delete the student. Please try again.");
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, age, course }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Registration failed.");
+      }
+
+      setMessage("Student registered successfully!");
+      setName("");
+      setAge("");
+      setCourse("");
+
+      await fetchStudents();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const filteredStudents = students.filter((student) =>
+    student.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="app-container">
-      <header className="navbar">
-        <button
-          className="navbar-brand"
-          type="button"
-          onClick={() => navigateTo("home")}
-          aria-label="CALINEPRO home"
-        >
-          <span className="navbar-logo" aria-hidden="true">
-            C
-          </span>
-          <span className="brand-text">
-            <strong>CALINEPRO</strong>
-            <small>STUDENT MANAGEMENT</small>
-          </span>
-        </button>
 
-        <nav className="navbar-links" aria-label="Main navigation">
-          <button
-            className={`nav-link ${page === "home" ? "active" : ""}`}
-            type="button"
-            onClick={() => navigateTo("home")}
-            aria-current={page === "home" ? "page" : undefined}
-          >
-            <span aria-hidden="true">⌂</span> Home
-          </button>
-          <button
-            className={`nav-link ${page === "register" ? "active" : ""}`}
-            type="button"
-            onClick={() => navigateTo("register")}
-            aria-current={page === "register" ? "page" : undefined}
-          >
-            <span aria-hidden="true">＋</span> Register
-          </button>
-          <button
-            className={`nav-link ${page === "students" ? "active" : ""}`}
-            type="button"
-            onClick={() => navigateTo("students")}
-            aria-current={page === "students" ? "page" : undefined}
-          >
-            <span aria-hidden="true">▤</span> Students
-          </button>
-        </nav>
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-icon">S</div>
+          <div>
+            <h2>STUDENT<span>HUB</span></h2>
+            <p>Management System</p>
+          </div>
+        </div>
 
-        <button
-          className="navbar-action"
-          type="button"
-          onClick={() => navigateTo("register")}
-        >
-          Get started <span aria-hidden="true">→</span>
-        </button>
-      </header>
+        <div className="sidebar-menu">
+          <p className="menu-heading">MAIN MENU</p>
 
-      <div className="feedback-region" aria-live="polite">
-        {error && (
-          <p className="error-message" role="alert">
-            {error}
-          </p>
-        )}
-        {successMessage && (
-          <p className="success-message" role="status">
-            {successMessage}
-          </p>
-        )}
-      </div>
+          <a href="#dashboard" className="menu-item active">
+            <span>▦</span> Dashboard
+          </a>
 
-      {page === "home" && (
-        <main className="home-page">
-          <section className="hero-premium">
-            <div className="hero-decoration decoration-one" aria-hidden="true" />
-            <div className="hero-decoration decoration-two" aria-hidden="true" />
+          <a href="#register" className="menu-item">
+            <span>＋</span> Register Student
+          </a>
 
-            <div className="hero-content">
-              <div className="hero-label">
-                <span className="hero-label-line" aria-hidden="true" />
-                SMART STUDENT MANAGEMENT
-              </div>
-              <h1>
-                Manage your
-                <span>student records</span>
-                with confidence.
-              </h1>
-              <p>
-                CALINEPRO makes student registration simple. Keep records
-                organized, find information quickly, and manage your student
-                list in one place.
-              </p>
-              <div className="hero-actions">
-                <button
-                  className="hero-primary"
-                  type="button"
-                  onClick={() => navigateTo("register")}
-                >
-                  Register a student <span aria-hidden="true">→</span>
-                </button>
-                <button
-                  className="hero-secondary"
-                  type="button"
-                  onClick={() => navigateTo("students")}
-                >
-                  View students
-                </button>
-              </div>
-            </div>
+          <a href="#students" className="menu-item">
+            <span>♙</span> Students
+          </a>
+        </div>
 
-            <div className="hero-stats" aria-label="System overview">
-              <div className="hero-stat-card">
-                <span className="hero-stat-icon" aria-hidden="true">
-                  ♙
-                </span>
-                <div>
-                  <small>Registered students</small>
-                  <strong>{students.length}</strong>
-                </div>
-              </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-icon" aria-hidden="true">
-                  ▣
-                </span>
-                <div>
-                  <small>Registration system</small>
-                  <strong>Ready</strong>
-                </div>
-              </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-icon success-icon" aria-hidden="true">
-                  ✓
-                </span>
-                <div>
-                  <small>System status</small>
-                  <strong className="active-status">Active</strong>
-                </div>
-              </div>
-            </div>
-          </section>
-        </main>
-      )}
+        <div className="sidebar-bottom">
+          <div className="admin-avatar">EG</div>
+          <div>
+            <strong>Administrator</strong>
+            <p>System Manager</p>
+          </div>
+        </div>
+      </aside>
 
-      {page === "register" && (
-        <main className="registration-page">
-          <header className="registration-header">
-            <span>CALINEPRO REGISTRATION</span>
-            <h1>Register a student</h1>
-            <p>Enter the student’s details to add a new record.</p>
-          </header>
+      {/* Main Content */}
+      <main className="main-content" id="dashboard">
 
-          <form className="registration-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="student-name">Student full name</label>
-              <input
-                autoComplete="name"
-                id="student-name"
-                maxLength={100}
-                minLength={2}
-                name="name"
-                onChange={handleChange}
-                placeholder="e.g. Alex Morgan"
-                required
-                value={formData.name}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="student-age">Age</label>
-              <input
-                id="student-age"
-                inputMode="numeric"
-                max={120}
-                min={1}
-                name="age"
-                onChange={handleChange}
-                placeholder="e.g. 18"
-                required
-                type="number"
-                value={formData.age}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="student-course">Course</label>
-              <input
-                id="student-course"
-                maxLength={100}
-                name="course"
-                onChange={handleChange}
-                placeholder="e.g. Information Technology"
-                required
-                value={formData.course}
-              />
-            </div>
-            <button
-              className="submit-button"
-              disabled={isSaving}
-              type="submit"
-            >
-              {isSaving ? "Saving…" : "Register student"}
-            </button>
-            <button
-              className="back-button"
-              type="button"
-              onClick={() => navigateTo("home")}
-            >
-              ← Back to home
-            </button>
-          </form>
-        </main>
-      )}
+        <header className="topbar">
+          <div>
+            <p className="breadcrumb">Pages / Dashboard</p>
+            <h1>Student Dashboard</h1>
+          </div>
 
-      {page === "students" && (
-        <main className="students-page">
-          <header className="students-header">
-            <span>CALINEPRO DIRECTORY</span>
-            <h1>Registered students</h1>
-            <p>Search and manage the student records saved on this device.</p>
-          </header>
+          <div className="topbar-right">
+            <span className="online-dot"></span>
+            <span>System Online</span>
+            <div className="profile-circle">EG</div>
+          </div>
+        </header>
 
-          <section className="students-summary" aria-label="Student summary">
+        <section className="welcome-banner">
+          <div>
+            <p className="welcome-label">WELCOME BACK, ADMINISTRATOR</p>
+            <h2>Manage Your Students</h2>
+            <p>
+              Organize student information, manage registrations,
+              and monitor academic records in one place.
+            </p>
+          </div>
+          <div className="banner-icon">🎓</div>
+        </section>
+
+        {/* Statistics */}
+        <section className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-icon blue">♙</div>
             <div>
-              <span className="summary-label">Total students</span>
-              <strong>{students.length}</strong>
+              <p>Total Students</p>
+              <h2>{students.length}</h2>
+              <span>Registered records</span>
             </div>
-            <button
-              className="summary-add-button"
-              type="button"
-              onClick={() => navigateTo("register")}
-            >
-              + Add student
-            </button>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-icon green">✓</div>
+            <div>
+              <p>System Status</p>
+              <h2 className="status-text">Active</h2>
+              <span>PHP and MySQL connected</span>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-icon purple">⌕</div>
+            <div>
+              <p>Search Results</p>
+              <h2>{filteredStudents.length}</h2>
+              <span>Matching students</span>
+            </div>
+          </div>
+        </section>
+
+        <div className="content-grid">
+
+          {/* Registration Form */}
+          <section className="panel registration-panel" id="register">
+            <div className="panel-heading">
+              <div>
+                <h2>Register New Student</h2>
+                <p>Enter the student's information below.</p>
+              </div>
+              <div className="heading-icon">＋</div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="student-form">
+
+              <div className="form-group">
+                <label htmlFor="studentName">Student Full Name</label>
+                <input
+                  id="studentName"
+                  type="text"
+                  placeholder="e.g. John Peter"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="studentAge">Student Age</label>
+                <input
+                  id="studentAge"
+                  type="number"
+                  placeholder="Enter student's age"
+                  min="1"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="studentCourse">Course / Department</label>
+                <input
+                  id="studentCourse"
+                  type="text"
+                  placeholder="e.g. Software Development"
+                  value={course}
+                  onChange={(e) => setCourse(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button
+                className="submit-btn"
+                type="submit"
+                disabled={submitting}
+              >
+                {submitting ? "Registering..." : "＋ Register Student"}
+              </button>
+            </form>
+
+            {message && (
+              <div className="alert success-alert">✓ {message}</div>
+            )}
+
+            {error && (
+              <div className="alert error-alert">⚠ {error}</div>
+            )}
           </section>
+
+          {/* Information Card */}
+          <section className="panel information-panel">
+            <div className="info-decoration">✦</div>
+            <div className="info-content">
+              <div className="info-icon">🗂️</div>
+              <h2>Student Records</h2>
+              <p>
+                All student information is stored securely in your
+                MySQL database and retrieved through your PHP API.
+              </p>
+
+              <div className="connection-status">
+                <span className="online-dot"></span>
+                Database Connection Active
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Student List */}
+        <section className="panel students-panel" id="students">
+          <div className="students-heading">
+            <div>
+              <h2>Registered Students</h2>
+              <p>View and search all registered student records.</p>
+            </div>
+
+            <span className="record-count">
+              {students.length} Records
+            </span>
+          </div>
 
           <div className="search-container">
-            <label className="visually-hidden" htmlFor="student-search">
-              Search students by name
-            </label>
+            <span>⌕</span>
             <input
-              id="student-search"
-              type="search"
+              type="text"
               placeholder="Search by student name..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
-          {filteredStudents.length > 0 ? (
-            <div className="students-list" role="table" aria-label="Students">
-              <div
-                className="students-table"
-                role="rowgroup"
-              >
-                <div className="student-row student-table-header" role="row">
-                  <span role="columnheader">Student name</span>
-                  <span role="columnheader">Age</span>
-                  <span role="columnheader">Course</span>
-                  <span role="columnheader">Action</span>
-                </div>
-                {filteredStudents.map((student) => (
-                  <div className="student-row" key={student.id} role="row">
-                    <span role="cell">{student.name}</span>
-                    <span role="cell">{student.age}</span>
-                    <span role="cell">{student.course}</span>
-                    <span role="cell">
-                      <button
-                        className="delete-button"
-                        type="button"
-                        aria-label={`Delete ${student.name}`}
-                        onClick={() => handleDelete(student.id)}
-                      >
-                        Delete
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </div>
+          {loading ? (
+            <div className="empty-state">Loading student records...</div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="empty-state">
+              <div>📂</div>
+              <h3>No students found</h3>
+              <p>Try another search or register a new student.</p>
             </div>
           ) : (
-            <section className="empty-state">
-              <span className="empty-icon" aria-hidden="true">
-                ♙
-              </span>
-              <h2>{searchTerm ? "No matching students" : "No students yet"}</h2>
-              <p>
-                {searchTerm
-                  ? "Try another name or clear the search."
-                  : "Register your first student to start building your directory."}
-              </p>
-              {!searchTerm && (
-                <button
-                  className="hero-primary"
-                  type="button"
-                  onClick={() => navigateTo("register")}
-                >
-                  Register a student <span aria-hidden="true">→</span>
-                </button>
-              )}
-            </section>
-          )}
-        </main>
-      )}
+            <div className="table-wrapper">
+              <table className="students-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>STUDENT NAME</th>
+                    <th>AGE</th>
+                    <th>COURSE</th>
+                    <th>REGISTRATION DATE</th>
+                  </tr>
+                </thead>
 
-      <footer className="app-footer">
-        <div className="footer-brand">
-          <span className="footer-logo" aria-hidden="true">
-            C
-          </span>
-          <strong>CALINEPRO</strong>
-        </div>
-        <p className="footer-description">
-          A simple, organized way to manage student registrations.
-        </p>
-        <div className="footer-divider" />
-        <div className="footer-bottom">
-          <p>© {new Date().getFullYear()} CALINEPRO. All rights reserved.</p>
-          <span>Student records are saved in this browser.</span>
-        </div>
-      </footer>
+                <tbody>
+                  {filteredStudents.map((student) => (
+                    <tr key={student.id}>
+                      <td>#{student.id}</td>
+                      <td>
+                        <div className="student-name-cell">
+                          <div className="student-avatar">
+                            {student.name.charAt(0).toUpperCase()}
+                          </div>
+                          <strong>{student.name}</strong>
+                        </div>
+                      </td>
+                      <td>{student.age} years</td>
+                      <td>
+                        <span className="course-badge">
+                          {student.course}
+                        </span>
+                      </td>
+                      <td>
+                        {student.created_at
+                          ? student.created_at.split(" ")[0]
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <footer className="footer">
+          <p>© 2026 <strong>ELIDYGRAM</strong>. All rights reserved.</p>
+          <p>Student Registration Management System</p>
+        </footer>
+
+      </main>
     </div>
   );
 }
